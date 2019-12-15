@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cmath>
 #include <ctime>
+#include <stdio.h>
 
 using std::cout;
 using std::cin;
@@ -496,7 +497,8 @@ void operator<<(std::ostream& out, const Matrix& x) {
 	out << '\n';
 	for (int i = 0; i < x.rows; ++i) {
 		for (int j = 0; j < x.cols; ++j)
-			out << x(i, j) << " ";
+			//out << x(i, j) << " ";
+			printf(" %5.8f", x(i, j));
 		out << '\n';
 	}
 	out << '\n';
@@ -537,11 +539,9 @@ double dot(const Matrix& V1, const Matrix& V2) { //proverka!!
 	return scal;
 }
 
-const double eps = 1e-6;
+const double eps = 1e-8;
 const double eps_hess = eps;
-const double eps_gauss = eps;
 const double eps_QR = eps;
-const double eps_inv_it = eps;
 
 int find_leading_element(const Matrix& A, int k) {
 	double max = abs(A(k, k));
@@ -566,10 +566,11 @@ void gauss_back_run(const Matrix& A, const Matrix& b, Matrix& X) {
 	}
 }
 
-Matrix Gauss(Matrix& A, Matrix& b, const double eps) {
+Matrix Gauss(Matrix& A, Matrix& b) {
 	// cout << "In Gauss\nArguments passed:\nA = " << A;
 	// cout << "b = " << b;
 
+	const double eps = 1e-06;
 	int rows_num = A.get_rows();  // а может всегда вызывать get_...()? сколько занимает вызов метода (функции?)
 	int cols_num = A.get_cols();
 	double tmp1(0), tmp2(0);  // инициализировать нулями?
@@ -684,7 +685,7 @@ bool condition_for_reduction(const Matrix& A, const Matrix& A_prev, int iter) {
 	return false;
 }
 
-Matrix eigenvalues_QR_with_reduction(Matrix A, bool shift, bool Hess)
+Matrix eigenvalues_QR_with_reduction(Matrix A, bool shift, bool Hess, double precision)
 {
 	int total_rotations(0);
 	int total_iter(0);
@@ -692,13 +693,15 @@ Matrix eigenvalues_QR_with_reduction(Matrix A, bool shift, bool Hess)
 	int size = A.get_rows();
 	Matrix eigenvalues(1, size);
 	if (Hess) Hessenberg(A);
-	Matrix A_prev = A;
+	//Matrix A_prev = A;
 	for (int k = size - 1; k > 0; --k) {
 		Matrix E = eye(k + 1);
 		int sum_rotations(0);
 		int iter(0);
+		double a_pred(0);
 		if (shift) {
-			while (condition_for_reduction_shift(A)) {
+			do {
+				a_pred = A(k, k);
 				double sigma = A(k, k);
 				A = A - E * sigma;
 				int rotations(0);
@@ -710,11 +713,12 @@ Matrix eigenvalues_QR_with_reduction(Matrix A, bool shift, bool Hess)
 				//cout << "Q: " << Q;
 				//cout << "\n";
 				iter++;
-			}
+			} while (abs(a_pred - A(k,k)) > precision);
 		}
 		else {
-			while (condition_for_reduction(A, A_prev, iter)) {
-				A_prev = A;
+			do {
+				a_pred = A(0, 0);
+				//A_prev = A;
 				int rotations(0);
 				Matrix Q = QR(A, Hess, rotations);
 				sum_rotations += rotations;
@@ -723,7 +727,7 @@ Matrix eigenvalues_QR_with_reduction(Matrix A, bool shift, bool Hess)
 				//cout << "Q: " << Q;
 				//cout << "\n";
 				iter++;
-			}
+			} while (abs(a_pred - A(0, 0)) > precision);
 		}
 		//cout << "A: " << A;
 		total_rotations += sum_rotations;
@@ -817,49 +821,76 @@ double relay_func(const Matrix& A, const Matrix& x) {
 
 Matrix inverse_iterations(const Matrix& A, const double eigenvalue_QR, bool relay, Matrix& x) {
 	int size = A.get_rows();
+	int iter(0);
+	const double eps_inv_it = 1e-03;
 	Matrix E = eye(size);
-	x = x * (1 / x.norma_l2());
+	x = x * (1.0 / x.norma_l2());
 	double eigenvalue;
 	if (relay) eigenvalue = relay_func(A, x);
 	else eigenvalue = eigenvalue_QR;
 	Matrix lambda_E = E * eigenvalue;
 	Matrix M = A - lambda_E;
 	while ((M * x).norma_l2() > eps_inv_it) {
-		x = Gauss(M, x, eps_gauss);
-		x = x * (1 / x.norma_l2());
+		x = Gauss(M, x);
+		x = x * (1.0 / x.norma_l2());
 		if (relay) lambda_E = E * relay_func(A, x);
 		M = A - lambda_E;
+		double d = (M * x).norma_l2();
+		iter++;
 	}
 	if (relay) cout << "Eigenvalue: " << relay_func(A, x);
+	cout << "The number of iterations: " << iter << "\n";
 	return x;
 }
 
 
 int main() {
+	const double precision = 1e-6;
 
 	Matrix A { {1.5,0,-0.43,-0.75}, {0,3,0.87,-0.5}, {-0.43,0.87,2.9,-0.22}, {-0.75,-0.5,-0.22,2.6}};
 	int size = A.get_rows();
-	Matrix e {{ 0.997313, 2.00425, 2.98702, 4.01142 }}; //right answer: eigenvalues
+	Matrix e {{ 0.99731349, 2.00425178, 2.98701807, 4.01141667}}; //right answer: eigenvalues
+	
+	Matrix e1{ {0.86446067, 0.00338916, 0.24459457, 0.43916941} };
+	Matrix e2{ {-0.01190705, 0.70975949, -0.60755531, 0.35633725} };
+	Matrix e3{ {-0.50254771, -0.01579640, 0.43089633, 0.74934947} };
+	Matrix e4{ {-0.00343211, 0.70425880, 0.62078853, -0.34442614} };
+	
 	cout << "A: " << A;
 
 	cout << "\n------------QR EIGENVALUES--------------\n\n";//
-	cout << "\n----------without Hessenberg-----------\n";// 
-	Matrix eigenvalues = eigenvalues_QR_with_reduction(A, true, false);
-	cout << "\nEigenvalues whithout Hessenberg: " << sort(eigenvalues);
-	cout << "Accuracy: " << (e - sort(eigenvalues)).norma_l2();
-	cout << "\n";
+	//cout << "\n----------without Hessenberg-----------\n";// 
+	//Matrix eigenvalues = eigenvalues_QR_with_reduction(A, false, false, precision);
+	//cout << "\nEigenvalues whithout Hessenberg: " << sort(eigenvalues);
+	//cout << "Accuracy: " << (e - sort(eigenvalues)).norma_inf();
+	//cout << "\n";
 
-	cout << "\n------------with Hessenberg------------\n";// 
-	eigenvalues = eigenvalues_QR_with_reduction(A, true, true);
+	//cout << "\n------------with Hessenberg------------\n";// 
+	//eigenvalues = eigenvalues_QR_with_reduction(A, false, true, precision);
+	//cout << "\nEigenvalues with Hessenberg: " << sort(eigenvalues);
+	//cout << "Accuracy: " << (e - sort(eigenvalues)).norma_inf();
+	//cout << "\n";
+
+	//cout << "\n---without Hessenberg with shifts------\n";// 
+	//eigenvalues = eigenvalues_QR_with_reduction(A, true, false, precision);
+	//cout << "\nEigenvalues whithout Hessenberg: " << sort(eigenvalues);
+	//cout << "Accuracy: " << (e - sort(eigenvalues)).norma_inf();
+	//cout << "\n";
+
+	cout << "\n----with Hessenberg with shifts--------\n";// 
+	Matrix eigenvalues = eigenvalues_QR_with_reduction(A, true, true, precision);
 	cout << "\nEigenvalues with Hessenberg: " << sort(eigenvalues);
-	cout << "Accuracy: " << (e - sort(eigenvalues)).norma_l2();
+	cout << "Accuracy: " << (e - sort(eigenvalues)).norma_inf();
 	cout << "\n\n\n";
 
-	Matrix x(size,1); // first approximation
+	Matrix x = { {1}, {3}, {2}, {-5} }; // first approximation
 
 	cout << "\n-------------EIGENVECTORS-------------\n\n";
 	cout << "\n----------of QR eigenvalues-----------\n";
-	for (int i = 0; i < size; i++) x(i) = 1;
+	//for (int i = 0; i < size; i++) x(i) = 1;
+
+	Matrix eig = { {1}, {2}, {3}, {4} };
+
 	for (int i = 0; i < A.get_rows(); i++) {
 		Matrix eigenvector = inverse_iterations(A, eigenvalues(i), false, x);
 		cout << "Eigenvalue: " << eigenvalues(i);
@@ -867,10 +898,11 @@ int main() {
 	}
 
 	cout << "\n---------of Relay eigenvalues---------\n";
-	x = { {-0.6}, {0.3}, {-0.1}, {-0.2} }; //1
+	x = { {-0.4}, {0.4}, {0.1}, {-0.2} }; //1
 	//x = { {0.1}, {0.6}, {-0.5}, {0.2} }; //2
 	//x = { {0.4}, {0}, {-0.3}, {-0.6} }; //3
 	//x = { {-0.1}, {0.5}, {0.3}, {-0.2} }; //4
+	//x = { {0.86446047}, {0.00339321}, {0.24459138}, {0.43917153} };
 	cout << "\nFor the first approximation: " << transpose_v(x);
 	Matrix eigenvector = inverse_iterations(A, 0, true, x);
 	cout << "\nEigenvector: " << transpose_v(eigenvector);
